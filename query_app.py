@@ -93,7 +93,7 @@ def trigger_ingestion() -> str:
     try:
         # Import and run the ingestion process
         from ingest import process_directory
-        result = process_directory("docs")
+        result = process_directory("/app/docs")
         return result
     except Exception as e:
         return f"Error during ingestion: {str(e)}"
