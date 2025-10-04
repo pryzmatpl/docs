@@ -45,11 +45,14 @@ def store_user_query(query_text: str, query_embedding: List[float], user_ip: str
     cur = conn.cursor()
     
     try:
+        # Convert the embedding list to a PostgreSQL vector format
+        embedding_vector = '[' + ','.join(map(str, query_embedding)) + ']'
+        
         cur.execute("""
             INSERT INTO user_queries (query_text, query_embedding, user_ip, session_id)
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s::vector, %s, %s)
             RETURNING id
-        """, (query_text, query_embedding, user_ip, session_id))
+        """, (query_text, embedding_vector, user_ip, session_id))
         
         query_id = cur.fetchone()[0]
         conn.commit()
@@ -64,14 +67,17 @@ def search_similar_documents(query_embedding: List[float], limit: int = 5) -> Li
     cur = conn.cursor()
     
     try:
+        # Convert the embedding list to a PostgreSQL vector format
+        embedding_vector = '[' + ','.join(map(str, query_embedding)) + ']'
+        
         # Use cosine similarity to find closest embeddings
         cur.execute("""
             SELECT doc_id, chunk_index, content, metadata, 
-                   1 - (embedding <=> %s) as similarity_score
+                   1 - (embedding <=> %s::vector) as similarity_score
             FROM documents
-            ORDER BY embedding <=> %s
+            ORDER BY embedding <=> %s::vector
             LIMIT %s
-        """, (query_embedding, query_embedding, limit))
+        """, (embedding_vector, embedding_vector, limit))
         
         results = []
         for row in cur.fetchall():
