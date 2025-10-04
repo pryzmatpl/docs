@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS user_queries (
     id SERIAL PRIMARY KEY,
     query_text TEXT NOT NULL,
-    query_embedding VECTOR(768),  -- Same dimension as documents table
+    query_embedding VECTOR(1536),  -- Same dimension as documents table
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     user_ip INET,
     session_id TEXT

@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS documents (
     chunk_index INT,       -- chunk number in doc
     content TEXT,          -- text chunk
     metadata JSONB,        -- e.g., {'source': 'file.pdf', 'page': 1}
-    embedding VECTOR(768)  -- Matches nomic-embed-text dimension; adjust if using other models
+    embedding VECTOR(1536)  -- Matches OpenAI text-embedding-ada-002 dimension
 );
 
 -- Index for fast similarity search (cosine distance)

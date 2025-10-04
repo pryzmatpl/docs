@@ -1,5 +1,6 @@
 import psycopg2
 import json
+import re
 from pathlib import Path
 from typing import List, Dict
 from langchain_community.document_loaders import PyPDFLoader
@@ -9,16 +10,26 @@ import os
 
 # Configs
 DB_CONFIG = {
-    'host': 'postgres',
+    'host': 'localhost',  # Changed from 'postgres' to 'localhost' for external access
     'port': 5432,
     'database': 'crewai_db',
     'user': 'postgres',
     'password': 'postgres'
 }
 OPENAI_CONFIG = {
-    'model': 'text-embedding-ada-002',
+    'model': 'text-embedding-ada-002',  # 1536 dimensions - we'll update DB schema to match
     'api_key': os.getenv('OPENAI_API_KEY')
 }
+
+
+def clean_text_content(text: str) -> str:
+    """Clean text content by removing problematic characters that can't be stored in PostgreSQL."""
+    # Remove NUL characters and other control characters except common whitespace
+    # Keep: \t (tab), \n (newline), \r (carriage return), \f (form feed), \v (vertical tab)
+    cleaned = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+    # Also remove any remaining problematic characters
+    cleaned = cleaned.replace('\x00', '').replace('\x01', '').replace('\x02', '').replace('\x03', '')
+    return cleaned.strip()
 
 
 def load_pdf(pdf_path: str) -> List[Dict]:
@@ -31,10 +42,12 @@ def load_pdf(pdf_path: str) -> List[Dict]:
         doc_chunks = []
         doc_id = Path(pdf_path).stem
         for i, chunk in enumerate(chunks):
+            # Clean content by removing problematic characters
+            cleaned_content = clean_text_content(chunk.page_content)
             doc_chunks.append({
                 'doc_id': doc_id,
                 'chunk_index': i,
-                'content': chunk.page_content,
+                'content': cleaned_content,
                 'metadata': {
                     'source': str(pdf_path),
                     'page': chunk.metadata.get('page', 0),
@@ -60,28 +73,33 @@ def get_embeddings(texts: List[str]) -> List[List[float]]:
 
 def insert_chunks_to_db(chunks: List[Dict], conn) -> int:
     """Insert chunks and their embeddings into the database."""
-    texts = [chunk['content'] for chunk in chunks]
-    embeddings = get_embeddings(texts)
-    insert_data = []
-    for chunk, embedding in zip(chunks, embeddings):
-        insert_data.append((
-            chunk['doc_id'],
-            chunk['chunk_index'],
-            chunk['content'],
-            json.dumps(chunk['metadata']),
-            embedding
-        ))
+    try:
+        texts = [chunk['content'] for chunk in chunks]
+        embeddings = get_embeddings(texts)
+        insert_data = []
+        for chunk, embedding in zip(chunks, embeddings):
+            insert_data.append((
+                chunk['doc_id'],
+                chunk['chunk_index'],
+                chunk['content'],
+                json.dumps(chunk['metadata']),
+                embedding
+            ))
 
-    cur = conn.cursor()
-    insert_sql = """
-        INSERT INTO documents (doc_id, chunk_index, content, metadata, embedding)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT DO NOTHING
-    """
-    cur.executemany(insert_sql, insert_data)
-    conn.commit()
-    cur.close()
-    return len(chunks)
+        cur = conn.cursor()
+        insert_sql = """
+            INSERT INTO documents (doc_id, chunk_index, content, metadata, embedding)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+        """
+        cur.executemany(insert_sql, insert_data)
+        conn.commit()
+        cur.close()
+        return len(chunks)
+    except Exception as e:
+        # Rollback the transaction on error
+        conn.rollback()
+        raise e
 
 
 def process_directory(directory_path: str) -> str:
