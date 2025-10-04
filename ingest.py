@@ -119,6 +119,6 @@ def process_directory(directory_path: str) -> str:
 
 
 if __name__ == "__main__":
-    directory_path = "./docs"  # Replace with your directory path
+    directory_path = "/app/docs"
     result = process_directory(directory_path)
     print(result)
