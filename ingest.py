@@ -10,7 +10,7 @@ import os
 
 # Configs
 DB_CONFIG = {
-    'host': 'localhost',  # Changed from 'postgres' to 'localhost' for external access
+    'host': os.getenv('DB_HOST', 'postgres'),  # Use 'postgres' for Docker, 'localhost' for external
     'port': 5432,
     'database': 'crewai_db',
     'user': 'postgres',
