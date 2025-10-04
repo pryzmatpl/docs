@@ -81,11 +81,21 @@ def search_similar_documents(query_embedding: List[float], limit: int = 5) -> Li
         
         results = []
         for row in cur.fetchall():
+            # Handle metadata - it might already be a dict from JSONB or a string
+            metadata = row[3]
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+            elif metadata is None:
+                metadata = {}
+            
             results.append({
                 'doc_id': row[0],
                 'chunk_index': row[1],
                 'content': row[2],
-                'metadata': json.loads(row[3]) if row[3] else {},
+                'metadata': metadata,
                 'similarity_score': float(row[4])
             })
         
