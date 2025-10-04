@@ -1,0 +1,173 @@
+from flask import Flask, render_template, request, jsonify, redirect, url_for
+import psycopg2
+import json
+import os
+from datetime import datetime
+from langchain_openai import OpenAIEmbeddings
+from typing import List, Dict, Tuple
+import uuid
+
+app = Flask(__name__)
+
+# Database configuration
+DB_CONFIG = {
+    'host': 'postgres',  # Use service name from docker-compose
+    'port': 5432,
+    'database': 'crewai_db',
+    'user': 'postgres',
+    'password': 'postgres'
+}
+
+# OpenAI configuration
+OPENAI_CONFIG = {
+    'model': 'text-embedding-ada-002',
+    'api_key': os.getenv('OPENAI_API_KEY')
+}
+
+def get_db_connection():
+    """Get database connection."""
+    return psycopg2.connect(**DB_CONFIG)
+
+def get_query_embedding(query_text: str) -> List[float]:
+    """Generate embedding for a query text."""
+    if not OPENAI_CONFIG['api_key']:
+        raise ValueError("OPENAI_API_KEY environment variable not set.")
+    
+    embeddings_model = OpenAIEmbeddings(
+        model=OPENAI_CONFIG['model'],
+        api_key=OPENAI_CONFIG['api_key']
+    )
+    return embeddings_model.embed_query(query_text)
+
+def store_user_query(query_text: str, query_embedding: List[float], user_ip: str = None, session_id: str = None) -> int:
+    """Store user query in the database and return query ID."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("""
+            INSERT INTO user_queries (query_text, query_embedding, user_ip, session_id)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        """, (query_text, query_embedding, user_ip, session_id))
+        
+        query_id = cur.fetchone()[0]
+        conn.commit()
+        return query_id
+    finally:
+        cur.close()
+        conn.close()
+
+def search_similar_documents(query_embedding: List[float], limit: int = 5) -> List[Dict]:
+    """Search for similar documents using vector similarity."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Use cosine similarity to find closest embeddings
+        cur.execute("""
+            SELECT doc_id, chunk_index, content, metadata, 
+                   1 - (embedding <=> %s) as similarity_score
+            FROM documents
+            ORDER BY embedding <=> %s
+            LIMIT %s
+        """, (query_embedding, query_embedding, limit))
+        
+        results = []
+        for row in cur.fetchall():
+            results.append({
+                'doc_id': row[0],
+                'chunk_index': row[1],
+                'content': row[2],
+                'metadata': json.loads(row[3]) if row[3] else {},
+                'similarity_score': float(row[4])
+            })
+        
+        return results
+    finally:
+        cur.close()
+        conn.close()
+
+def trigger_ingestion() -> str:
+    """Trigger the document ingestion process."""
+    try:
+        # Import and run the ingestion process
+        from ingest import process_directory
+        result = process_directory("./docs")
+        return result
+    except Exception as e:
+        return f"Error during ingestion: {str(e)}"
+
+@app.route('/')
+def index():
+    """Main page with query interface."""
+    return render_template('index.html')
+
+@app.route('/query', methods=['POST'])
+def query():
+    """Handle semantic search queries."""
+    try:
+        query_text = request.form.get('query', '').strip()
+        if not query_text:
+            return jsonify({'error': 'Query text is required'}), 400
+        
+        # Generate embedding for the query
+        query_embedding = get_query_embedding(query_text)
+        
+        # Store the query
+        user_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR'))
+        session_id = request.cookies.get('session_id', str(uuid.uuid4()))
+        query_id = store_user_query(query_text, query_embedding, user_ip, session_id)
+        
+        # Search for similar documents
+        results = search_similar_documents(query_embedding, limit=5)
+        
+        return jsonify({
+            'query_id': query_id,
+            'query_text': query_text,
+            'results': results,
+            'total_results': len(results)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/ingest', methods=['POST'])
+def ingest():
+    """Trigger document ingestion."""
+    try:
+        result = trigger_ingestion()
+        return jsonify({'message': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/history')
+def history():
+    """Show query history."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("""
+            SELECT id, query_text, created_at, user_ip
+            FROM user_queries
+            ORDER BY created_at DESC
+            LIMIT 50
+        """)
+        
+        queries = []
+        for row in cur.fetchall():
+            queries.append({
+                'id': row[0],
+                'query_text': row[1],
+                'created_at': row[2],
+                'user_ip': row[3]
+            })
+        
+        return render_template('history.html', queries=queries)
+    finally:
+        cur.close()
+        conn.close()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=50505, debug=True)
