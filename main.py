@@ -1,10 +1,18 @@
 from crewai import Agent, Task, Crew
 from tools import DocextractTool
 from langchain_openai import OpenAI
+from dotenv import load_dotenv
 import os
 
-os.environ["OPENAI_API_KEY"] = "your-api-key-here"  # Set your key
-llm = OpenAI(model="gpt-3.5-turbo")  # Or another model
+# Load environment variables from .env file
+load_dotenv()
+
+# Get OpenAI API key from environment
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("OPENAI_API_KEY not found in environment variables. Please set it in your .env file.")
+
+llm = OpenAI(model="gpt-3.5-turbo", api_key=api_key)
 
 agent = Agent(
     role="Document Processor",

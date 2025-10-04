@@ -16,6 +16,19 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=crewai_db
 
+  crewai-extraction:
+    build:
+      context: .
+      dockerfile: Dockerfile.crewai
+    volumes:
+      - ./docs:/app/docs
+      - ./.env:/app/.env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - postgres
+    restart: "no"
+
   query-app:
     build:
       context: .
