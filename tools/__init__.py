@@ -20,7 +20,7 @@ class DocextractTool(BaseTool):
 
     # Database and embedding configurations
     DB_CONFIG = {
-        'host': 'localhost',
+        'host': 'postgres',
         'port': 5432,
         'database': 'crewai_db',
         'user': 'postgres',

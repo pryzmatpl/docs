@@ -9,7 +9,7 @@ import os
 
 # Configs
 DB_CONFIG = {
-    'host': 'localhost',
+    'host': 'postgres',
     'port': 5432,
     'database': 'crewai_db',
     'user': 'postgres',

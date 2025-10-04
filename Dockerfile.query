@@ -15,12 +15,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
+# Create docs directory if it doesn't exist
+RUN mkdir -p docs
+
 # Expose port
 EXPOSE 50505
 
 # Set environment variables
 ENV FLASK_APP=query_app.py
 ENV FLASK_ENV=development
+ENV PYTHONPATH=/app
 
 # Run the application
 CMD ["python", "query_app.py"]
