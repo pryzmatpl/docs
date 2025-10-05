@@ -91,8 +91,13 @@ class DocextractTool(BaseTool):
                             json.dumps(metadata)
                         ))
 
-                    # Generate embeddings for all chunks in one call (more efficient)
-                    embeddings = embeddings_model.embed_documents(texts)
+                    # Generate embeddings in safe batches to avoid per-request token caps
+                    embeddings = []
+                    batch_size = 64  # conservative to keep total tokens under provider limits
+                    for start_idx in range(0, len(texts), batch_size):
+                        batch_texts = texts[start_idx:start_idx + batch_size]
+                        batch_embeddings = embeddings_model.embed_documents(batch_texts)
+                        embeddings.extend(batch_embeddings)
 
                     # Add embeddings to insert data
                     for i, embedding in enumerate(embeddings):
