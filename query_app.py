@@ -8,6 +8,7 @@ from typing import List, Dict, Tuple
 import uuid
 from crewai import Agent, Task, Crew
 from tools import DocextractTool
+from tools import SummarizeTool
 from langchain_openai import OpenAI
 
 app = Flask(__name__)
@@ -157,12 +158,42 @@ def query():
         
         # Search for similar documents
         results = search_similar_documents(query_embedding, limit=5)
+
+        # Kickoff SummarizerAgent via SummarizeTool and wait for completion
+        # Prepare contexts from results
+        contexts = [r.get('content', '') for r in results]
+
+        # Create agent (for orchestration/traceability) and run the tool synchronously
+        api_key = os.getenv("OPENAI_API_KEY")
+        llm = OpenAI(model="gpt-3.5-turbo", api_key=api_key) if api_key else None
+        summarizer_agent = Agent(
+            role="SummarizerAgent",
+            goal="Summarize retrieved contexts into a concise knowledge summary for the user query.",
+            backstory="You turn retrieved passages into accurate, actionable summaries.",
+            tools=[SummarizeTool()],
+            llm=llm,
+            verbose=False
+        )
+        task = Task(
+            description=(
+                "Use SummarizeTool with provided query_id, query_text and contexts to produce and store a summary."
+            ),
+            expected_output="A stored summary row and the summary text returned.",
+            agent=summarizer_agent
+        )
+        # Execute tool directly to guarantee args and storage
+        summary_text = SummarizeTool().run(
+            query_id=query_id,
+            query_text=query_text,
+            contexts=contexts
+        )
         
         return jsonify({
             'query_id': query_id,
             'query_text': query_text,
             'results': results,
-            'total_results': len(results)
+            'total_results': len(results),
+            'summary': summary_text
         })
         
     except Exception as e:

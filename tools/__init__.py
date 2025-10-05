@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, List
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 import psycopg2
@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, OpenAI
 import os
 import re
 
@@ -126,3 +126,66 @@ class DocextractTool(BaseTool):
 
         except Exception as e:
             return f"Error in document extraction: {str(e)}"
+
+
+class SummarizeToolInput(BaseModel):
+    """Input schema for SummarizeTool."""
+    query_id: int = Field(..., description="ID of the stored user query to attach the summary to")
+    query_text: str = Field(..., description="Original user query text for context")
+    contexts: List[str] = Field(..., description="List of top matched chunk contents to summarize")
+
+
+class SummarizeTool(BaseTool):
+    name: str = "Summarize tool"
+    description: str = "Summarizes the provided contexts with respect to the user's query and stores the result in the summaries table."
+    args_schema: Type[BaseModel] = SummarizeToolInput
+
+    def _run(self, query_id: int, query_text: str, contexts: List[str]) -> str:
+        # Validate API key
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            return "Error: OPENAI_API_KEY environment variable not set."
+
+        # Prepare prompt
+        joined_context = "\n\n".join([c.strip() for c in contexts if c and c.strip()])
+        if not joined_context:
+            return "Error: No contexts provided to summarize."
+
+        system_prompt = (
+            "You are a precise research assistant. Given a user query and a set of retrieved document excerpts, "
+            "produce a concise, factual, and well-structured knowledge summary answering the query. "
+            "Include key points, definitions, and any caveats. Avoid speculation."
+        )
+        user_prompt = (
+            f"User Query:\n{query_text}\n\n"
+            f"Retrieved Contexts (may be partial excerpts, do not hallucinate beyond them):\n{joined_context}\n\n"
+            "Task: Provide a 5-10 bullet point knowledge summary tailored to the query."
+        )
+
+        # Call LLM
+        llm = OpenAI(model="gpt-3.5-turbo", api_key=api_key)
+        try:
+            summary_text = llm.invoke(f"{system_prompt}\n\n{user_prompt}")
+        except Exception as e:
+            return f"Error generating summary: {str(e)}"
+
+        # Store in DB
+        try:
+            conn = psycopg2.connect(**DB_CONFIG)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO summaries (query_id, summary, model)
+                VALUES (%s, %s, %s)
+                RETURNING id
+                """,
+                (query_id, summary_text, "gpt-3.5-turbo"),
+            )
+            summary_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            return f"Error storing summary: {str(e)}"
+
+        return summary_text
