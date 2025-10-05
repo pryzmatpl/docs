@@ -6,7 +6,7 @@ from datetime import datetime
 from langchain_openai import OpenAIEmbeddings
 from typing import List, Dict, Tuple
 import uuid
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task, Crew, Process
 from tools import DocextractTool
 from tools import SummarizeTool
 from langchain_openai import OpenAI
@@ -181,13 +181,21 @@ def query():
             expected_output="A stored summary row and the summary text returned.",
             agent=summarizer_agent
         )
-        # Execute tool directly to guarantee args and storage
-        summary_text = SummarizeTool().run(
-            query_id=query_id,
-            query_text=query_text,
-            contexts=contexts
-        )
-        
+
+        crew =  Crew(
+            agents=[summarizer_agent],
+            tasks=[task],
+            process=Process.sequential,
+            verbose=True)
+
+        crew_output = crew.kickoff()
+        if crew_output.json_dict:
+            print(f"JSON Output: {json.dumps(crew_output.json_dict, indent=2)}")
+        if crew_output.pydantic:
+            print(f"Pydantic Output: {crew_output.pydantic}")
+
+        summary_text = crew_output.summary_text
+
         return jsonify({
             'query_id': query_id,
             'query_text': query_text,
