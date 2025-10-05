@@ -44,7 +44,8 @@ class DocextractTool(BaseTool):
                 return f"Error: '{path}' is not a valid directory."
 
             # Initialize text splitter and embeddings model
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            # Smaller chunks reduce token spikes; overlap preserves context
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=160)
             embeddings_model = OpenAIEmbeddings(
                 model=OPENAI_CONFIG['model'],
                 api_key=OPENAI_CONFIG['api_key']
@@ -98,8 +99,8 @@ class DocextractTool(BaseTool):
                         ))
 
                     # Clip overly long texts (defensive) and build dynamic batches
-                    max_tokens_per_input = 7000  # well under model per-input limit
-                    max_tokens_per_request = 250000  # keep headroom under provider cap
+                    max_tokens_per_input = 4096  # conservative per-input cap
+                    max_tokens_per_request = 200000  # extra headroom under provider cap
 
                     clipped_texts = []
                     for t in texts:

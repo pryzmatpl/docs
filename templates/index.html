@@ -173,6 +173,19 @@
                 </div>
             `;
 
+            if (data.summary) {
+                html += `
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-list-ul"></i> Summary</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="content-text">${data.summary}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
             data.results.forEach((result, index) => {
                 const similarityPercent = Math.round(result.similarity_score * 100);
                 html += `

@@ -6,7 +6,8 @@ from datetime import datetime
 from langchain_openai import OpenAIEmbeddings
 from typing import List, Dict, Tuple
 import uuid
-from crewai import Agent, Task, Crew, Process
+from crewai import Agent, Task, Crew
+from crewai.process import Process
 from tools import DocextractTool
 from tools import SummarizeTool
 from langchain_openai import OpenAI
@@ -163,38 +164,9 @@ def query():
         # Prepare contexts from results
         contexts = [r.get('content', '') for r in results]
 
-        # Create agent (for orchestration/traceability) and run the tool synchronously
-        api_key = os.getenv("OPENAI_API_KEY")
-        llm = OpenAI(model="gpt-3.5-turbo", api_key=api_key) if api_key else None
-        summarizer_agent = Agent(
-            role="SummarizerAgent",
-            goal="Summarize retrieved contexts into a concise knowledge summary for the user query.",
-            backstory="You turn retrieved passages into accurate, actionable summaries.",
-            tools=[SummarizeTool()],
-            llm=llm,
-            verbose=False
-        )
-        task = Task(
-            description=(
-                "Use SummarizeTool with provided query_id, query_text and contexts to produce and store a summary."
-            ),
-            expected_output="A stored summary row and the summary text returned.",
-            agent=summarizer_agent
-        )
-
-        crew =  Crew(
-            agents=[summarizer_agent],
-            tasks=[task],
-            process=Process.sequential,
-            verbose=True)
-
-        crew_output = crew.kickoff()
-        if crew_output.json_dict:
-            print(f"JSON Output: {json.dumps(crew_output.json_dict, indent=2)}")
-        if crew_output.pydantic:
-            print(f"Pydantic Output: {crew_output.pydantic}")
-
-        summary_text = crew_output.summary_text
+        # Run summarization tool directly with explicit inputs
+        summarizer_tool = SummarizeTool()
+        summary_text = summarizer_tool._run(query_id=query_id, query_text=query_text, contexts=contexts)
 
         return jsonify({
             'query_id': query_id,
