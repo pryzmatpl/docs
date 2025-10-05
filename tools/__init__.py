@@ -69,7 +69,9 @@ class DocextractTool(BaseTool):
                     insert_data = []
                     texts = []
                     for i, chunk in enumerate(chunks):
-                        content = chunk.page_content
+                        # Sanitize content to avoid NUL (0x00) characters which Postgres rejects
+                        raw_content = chunk.page_content or ""
+                        content = raw_content.replace("\x00", "")
                         metadata = {
                             'source': str(file_path),
                             'doc_id': doc_id,
