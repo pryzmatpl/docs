@@ -6,6 +6,9 @@ from datetime import datetime
 from langchain_openai import OpenAIEmbeddings
 from typing import List, Dict, Tuple
 import uuid
+from crewai import Agent, Task, Crew
+from tools import DocextractTool
+from langchain_openai import OpenAI
 
 app = Flask(__name__)
 
@@ -105,12 +108,29 @@ def search_similar_documents(query_embedding: List[float], limit: int = 5) -> Li
         conn.close()
 
 def trigger_ingestion() -> str:
-    """Trigger the document ingestion process."""
+    """Trigger the document ingestion process via CrewAI agent and DocextractTool."""
     try:
-        # Import and run the ingestion process
-        from ingest import process_directory
-        result = process_directory("/app/docs")
-        return result
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return "Error: OPENAI_API_KEY environment variable not set."
+
+        llm = OpenAI(model="gpt-3.5-turbo", api_key=api_key)
+        agent = Agent(
+            role="Document Processor",
+            goal="Extract and store document embeddings for semantic search",
+            backstory="You are an expert in processing documents and preparing them for semantic search.",
+            tools=[DocextractTool()],
+            llm=llm,
+            verbose=True
+        )
+        task = Task(
+            description="Extract embeddings from PDF files in the '/app/docs' directory and store them in the vector database.",
+            expected_output="A summary of processed files and the number of chunks stored.",
+            agent=agent
+        )
+        crew = Crew(agents=[agent], tasks=[task])
+        result = crew.kickoff()
+        return str(result)
     except Exception as e:
         return f"Error during ingestion: {str(e)}"
 

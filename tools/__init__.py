@@ -8,6 +8,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 import os
+import re
 
 # Module-level configuration constants (kept out of Pydantic models)
 DB_CONFIG = {
@@ -68,10 +69,14 @@ class DocextractTool(BaseTool):
                     # Prepare data for database insertion
                     insert_data = []
                     texts = []
+                    def clean_text_content(text: str) -> str:
+                        # Remove control characters not supported by Postgres text/varchar
+                        # Keep common whitespace: \t, \n, \r, \f, \v
+                        cleaned = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text or "")
+                        return cleaned.strip()
+
                     for i, chunk in enumerate(chunks):
-                        # Sanitize content to avoid NUL (0x00) characters which Postgres rejects
-                        raw_content = chunk.page_content or ""
-                        content = raw_content.replace("\x00", "")
+                        content = clean_text_content(chunk.page_content)
                         metadata = {
                             'source': str(file_path),
                             'doc_id': doc_id,
