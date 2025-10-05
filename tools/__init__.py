@@ -215,7 +215,7 @@ class SummarizeTool(BaseTool):
         try:
             conn = psycopg2.connect(**DB_CONFIG)
             cur = conn.cursor()
-            # Ensure summaries table exists (idempotent)
+            # Ensure summaries table exists (idempotent) and commit before insert
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS summaries (
@@ -224,11 +224,20 @@ class SummarizeTool(BaseTool):
                     summary TEXT NOT NULL,
                     model TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS summaries_query_id_uniq ON summaries(query_id);
-                CREATE INDEX IF NOT EXISTS summaries_created_at_idx ON summaries (created_at);
+                )
                 """
             )
+            cur.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS summaries_query_id_uniq ON summaries(query_id)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS summaries_created_at_idx ON summaries (created_at)
+                """
+            )
+            conn.commit()
             cur.execute(
                 """
                 INSERT INTO summaries (query_id, summary, model)
