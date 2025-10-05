@@ -1,5 +1,5 @@
 from typing import Type
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 import psycopg2
 import json
@@ -8,6 +8,19 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 import os
+
+# Module-level configuration constants (kept out of Pydantic models)
+DB_CONFIG = {
+    'host': 'postgres',
+    'port': 5432,
+    'database': 'crewai_db',
+    'user': 'postgres',
+    'password': 'postgres'
+}
+OPENAI_CONFIG = {
+    'model': 'text-embedding-ada-002',
+    'api_key': os.getenv('OPENAI_API_KEY')
+}
 
 class DocextractToolInput(BaseModel):
     """Input schema for Docsearch."""
@@ -18,23 +31,10 @@ class DocextractTool(BaseTool):
     description: str = "Extracts document embeddings from PDF files in a specific directory and stores them in a vector database."
     args_schema: Type[BaseModel] = DocextractToolInput
 
-    # Database and embedding configurations
-    DB_CONFIG = {
-        'host': 'postgres',
-        'port': 5432,
-        'database': 'crewai_db',
-        'user': 'postgres',
-        'password': 'postgres'
-    }
-    OPENAI_CONFIG = {
-        'model': 'text-embedding-ada-002',
-        'api_key': os.getenv('OPENAI_API_KEY')
-    }
-
     def _run(self, path: str) -> str:
         try:
             # Validate OpenAI API key
-            if not self.OPENAI_CONFIG['api_key']:
+            if not OPENAI_CONFIG['api_key']:
                 return "Error: OPENAI_API_KEY environment variable not set."
 
             # Validate directory path
@@ -45,12 +45,12 @@ class DocextractTool(BaseTool):
             # Initialize text splitter and embeddings model
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             embeddings_model = OpenAIEmbeddings(
-                model=self.OPENAI_CONFIG['model'],
-                api_key=self.OPENAI_CONFIG['api_key']
+                model=OPENAI_CONFIG['model'],
+                api_key=OPENAI_CONFIG['api_key']
             )
 
             # Connect to database
-            conn = psycopg2.connect(**self.DB_CONFIG)
+            conn = psycopg2.connect(**DB_CONFIG)
             cur = conn.cursor()
 
             processed_files = []
