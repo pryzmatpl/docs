@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, OpenAI
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 import os
 import re
 
@@ -199,10 +200,14 @@ class SummarizeTool(BaseTool):
             "Task: Provide a 5-10 bullet point knowledge summary tailored to the query."
         )
 
-        # Call LLM
-        llm = OpenAI(model="gpt-3.5-turbo", api_key=api_key)
+        # Call LLM via chat completions API
+        llm = ChatOpenAI(model="gpt-3.5-turbo", api_key=api_key)
         try:
-            summary_text = llm.invoke(f"{system_prompt}\n\n{user_prompt}")
+            response = llm.invoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ])
+            summary_text = response.content
         except Exception as e:
             return f"Error generating summary: {str(e)}"
 
