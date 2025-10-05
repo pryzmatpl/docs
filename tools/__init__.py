@@ -25,7 +25,7 @@ OPENAI_CONFIG = {
 
 class DocextractToolInput(BaseModel):
     """Input schema for Docsearch."""
-    path: str = Field(str, description="Directory path.")
+    path: str = Field(..., description="Directory path.")
 
 class DocextractTool(BaseTool):
     name: str = "Document extract tool"
@@ -56,6 +56,12 @@ class DocextractTool(BaseTool):
 
             processed_files = []
             total_chunks = 0
+
+            # Helper: conservative token estimate (~4 chars per token)
+            def estimate_tokens_for_text(text: str) -> int:
+                if not text:
+                    return 0
+                return max(1, len(text) // 4)
 
             # Iterate over PDF files in the directory
             for file_path in directory.glob("*.pdf"):
@@ -91,12 +97,37 @@ class DocextractTool(BaseTool):
                             json.dumps(metadata)
                         ))
 
-                    # Generate embeddings in safe batches to avoid per-request token caps
+                    # Clip overly long texts (defensive) and build dynamic batches
+                    max_tokens_per_input = 7000  # well under model per-input limit
+                    max_tokens_per_request = 250000  # keep headroom under provider cap
+
+                    clipped_texts = []
+                    for t in texts:
+                        est = estimate_tokens_for_text(t)
+                        if est > max_tokens_per_input:
+                            # clip by characters based on estimate
+                            max_chars = max_tokens_per_input * 4
+                            clipped_texts.append(t[:max_chars])
+                        else:
+                            clipped_texts.append(t)
+
                     embeddings = []
-                    batch_size = 64  # conservative to keep total tokens under provider limits
-                    for start_idx in range(0, len(texts), batch_size):
-                        batch_texts = texts[start_idx:start_idx + batch_size]
-                        batch_embeddings = embeddings_model.embed_documents(batch_texts)
+                    current_batch = []
+                    current_tokens = 0
+                    for t in clipped_texts:
+                        t_tokens = estimate_tokens_for_text(t)
+                        # if adding this text would exceed request cap, flush batch
+                        if current_batch and (current_tokens + t_tokens) > max_tokens_per_request:
+                            batch_embeddings = embeddings_model.embed_documents(current_batch)
+                            embeddings.extend(batch_embeddings)
+                            current_batch = []
+                            current_tokens = 0
+                        current_batch.append(t)
+                        current_tokens += t_tokens
+
+                    # flush final batch
+                    if current_batch:
+                        batch_embeddings = embeddings_model.embed_documents(current_batch)
                         embeddings.extend(batch_embeddings)
 
                     # Add embeddings to insert data
